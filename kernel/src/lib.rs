@@ -8,6 +8,7 @@ mod shell;
 mod syscalls;
 mod tty;
 
+use core::fmt::{self, Write};
 use process::{CURRENT_PROCESS, NEXT_PID, PROCESS_TABLE, ProcessState};
 
 static mut INITIALIZED: bool = false;
@@ -30,11 +31,32 @@ pub extern "C" fn kernel_init() {
     }
 }
 
+#[link(wasm_import_module = "env")]
+unsafe extern "C" {
+    // Δηλώνουμε τη JS συνάρτηση
+    pub unsafe fn host_log(ptr: *const u8, len: usize);
+}
+
+struct HostLogger;
+
+impl Write for HostLogger {
+    fn write_str(&mut self, s: &str) -> fmt::Result {
+        unsafe {
+            host_log(s.as_ptr(), s.len());
+        }
+        Ok(())
+    }
+}
+
 #[cfg(not(test))]
 #[panic_handler]
-fn panic(_info: &core::panic::PanicInfo) -> ! {
-    shared_memory::write_to_shared_memory(b"PANIC!");
-    loop {}
+fn panic(info: &core::panic::PanicInfo) -> ! {
+    // Χρησιμοποιούμε το writeln! macro που γράφει κατευθείαν
+    // στο HostLogger ΧΩΡΙΣ να κάνει allocate String.
+    let mut logger = HostLogger;
+    let _ = writeln!(logger, "{}", info);
+
+    loop {} // Σταματάμε την εκτέλεση
 }
 
 #[unsafe(no_mangle)]
@@ -55,8 +77,6 @@ pub extern "C" fn kernel_spawn(ptr: usize, size: usize, perms: u32) -> u32 {
         entry_point: None,
     });
 
-    let msg = "Process spawned successfully!";
-    shared_memory::write_to_shared_memory(msg.as_bytes());
     pid
 }
 

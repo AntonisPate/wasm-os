@@ -11,7 +11,7 @@ pub enum Syscall {
 
 pub fn dispatch_syscall(call: Syscall) -> i32 {
     let pid = unsafe { CURRENT_PROCESS.unwrap_or(0) };
-    
+
     if pid == 0 {
         return -1;
     }
@@ -60,10 +60,15 @@ pub fn dispatch_syscall(call: Syscall) -> i32 {
 }
 
 fn validate_memory(pid: u32, ptr: usize, len: usize) -> bool {
+    // Το εσωτερικό Shell (PID 1) είναι trusted και έχει πρόσβαση παντού
+    if pid == 1 {
+        return true;
+    }
+
     let table = PROCESS_TABLE.lock();
     if let Some(proc) = table.iter().find(|p| p.id == pid) {
         let in_bounds = ptr >= proc.memory_start && (ptr + len) <= (proc.memory_start + proc.size);
         return in_bounds;
     }
-    pid == 1 
+    false
 }

@@ -19,4 +19,6 @@ rustflags = [
     "link-arg=--initial-memory=4194304",
     "-C",
     "link-arg=--max-memory=16777216",
+    "-C",
+    "link-arg=--allow-undefined",
 ]

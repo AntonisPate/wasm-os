@@ -8,4 +8,4 @@ crate-type = ["cdylib"]
 
 [dependencies]
 spin = "0.10.0"
-dlmalloc = { version = "0.2", features = ["global"] }
+dlmalloc = { version = "0.2" }

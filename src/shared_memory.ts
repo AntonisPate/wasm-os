@@ -71,7 +71,7 @@ export class SharedMemory {
 
     this.inputBus[0] = this.STATUS.EDIT;
     // Καθαρίζουμε τον buffer πριν γράψουμε νέα δεδομένα (για να μην έχουμε σκουπίδια)
-    this.inputBus.fill(0, 1, 4);
+    this.inputBus.fill(0, 1);
 
     const view = this.inputBus.subarray(4);
     view.set(encoded.slice(0, this.BUFFER_SIZE - 4));
