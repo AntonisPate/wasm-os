@@ -1,6 +1,7 @@
 #![no_std]
 extern crate alloc;
 
+mod commands;
 mod dynamic_memory;
 mod process;
 mod shared_memory;
@@ -81,6 +82,9 @@ pub extern "C" fn kernel_spawn(ptr: usize, size: usize, perms: u32) -> u32 {
         state: process::ProcessState::Running,
         entry_point: None,
         file_descriptors: fds,
+        argc: 0,
+        argv: core::ptr::null(),
+        arg_storage: None,
     });
 
     pid
@@ -115,8 +119,13 @@ pub extern "C" fn kernel_loop() {
     let line_ready = tty::TTY.lock().process_input();
 
     // 3. Scheduler (Minimal)
-    let mut table = PROCESS_TABLE.lock();
-    for i in 0..table.len() {
+    let mut i = 0;
+    loop {
+        let mut table = PROCESS_TABLE.lock();
+        if i >= table.len() {
+            break;
+        }
+        
         let pid = table[i].id;
 
         // Unblock processes waiting for TTY
@@ -131,13 +140,14 @@ pub extern "C" fn kernel_loop() {
                 unsafe {
                     CURRENT_PROCESS = Some(pid);
                 }
-                table[i].state = ProcessState::Running;
+                let argc = table[i].argc;
+                let argv = table[i].argv;
 
                 // Release the lock before calling the process to avoid deadlocks
                 // if the process makes a syscall that needs the table lock.
                 drop(table);
 
-                entry();
+                entry(argc, argv);
 
                 // Re-acquire lock and check if process exited or blocked itself
                 table = PROCESS_TABLE.lock();
@@ -149,6 +159,7 @@ pub extern "C" fn kernel_loop() {
                 }
             }
         }
+        i += 1;
     }
 }
 

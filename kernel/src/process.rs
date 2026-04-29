@@ -20,9 +20,15 @@ pub struct Process {
     pub size: usize,
     pub permissions: u32,
     pub state: ProcessState,
-    pub entry_point: Option<fn()>,
+    pub entry_point: Option<fn(usize, *const *const u8)>,
     pub file_descriptors: [Option<FileType>; 8],
+    pub argc: usize,
+    pub argv: *const *const u8,
+    pub arg_storage: Option<(Vec<Vec<u8>>, Vec<*const u8>)>,
 }
+
+unsafe impl Send for Process {}
+unsafe impl Sync for Process {}
 
 pub static PROCESS_TABLE: Mutex<Vec<Process>> = Mutex::new(Vec::new());
 pub static mut NEXT_PID: u32 = 1;
