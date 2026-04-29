@@ -3,6 +3,7 @@ extern crate alloc;
 
 mod commands;
 mod dynamic_memory;
+mod fs;
 mod process;
 mod shared_memory;
 mod shell;
@@ -25,7 +26,7 @@ pub extern "C" fn kernel_init() {
     }
 
     // Spawn the Shell as PID 1
-    kernel_spawn(0x100000, 0x10000, 3); // Symbolic memory
+    kernel_spawn(0x100000, 0x10000, 3, None, alloc::string::String::from("/")); // Symbolic memory
     let mut table = PROCESS_TABLE.lock();
     if let Some(shell) = table.iter_mut().find(|p| p.id == 1) {
         shell.entry_point = Some(shell::shell_main);
@@ -62,7 +63,7 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn kernel_spawn(ptr: usize, size: usize, perms: u32) -> u32 {
+pub extern "C" fn kernel_spawn(ptr: usize, size: usize, perms: u32, stdout_type: Option<process::FileType>, cwd: alloc::string::String) -> u32 {
     let mut table = PROCESS_TABLE.lock();
     let pid = unsafe {
         let current = NEXT_PID;
@@ -70,9 +71,9 @@ pub extern "C" fn kernel_spawn(ptr: usize, size: usize, perms: u32) -> u32 {
         current
     };
 
-    let mut fds = [None; 8];
+    let mut fds = [const { None }; 8];
     fds[vfs::STDIN as usize] = Some(process::FileType::Tty); // stdin
-    fds[vfs::STDOUT as usize] = Some(process::FileType::Tty); // stdout
+    fds[vfs::STDOUT as usize] = Some(stdout_type.unwrap_or(process::FileType::Tty)); // stdout (inherited or TTY)
 
     table.push(process::Process {
         id: pid,
@@ -85,6 +86,7 @@ pub extern "C" fn kernel_spawn(ptr: usize, size: usize, perms: u32) -> u32 {
         argc: 0,
         argv: core::ptr::null(),
         arg_storage: None,
+        cwd,
     });
 
     pid

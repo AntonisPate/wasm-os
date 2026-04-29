@@ -1,4 +1,5 @@
 use alloc::vec::Vec;
+use alloc::string::String;
 use spin::Mutex;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -9,9 +10,10 @@ pub enum ProcessState {
     Terminated,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FileType {
     Tty,
+    File { path: String, offset: usize },
 }
 
 pub struct Process {
@@ -25,6 +27,7 @@ pub struct Process {
     pub argc: usize,
     pub argv: *const *const u8,
     pub arg_storage: Option<(Vec<Vec<u8>>, Vec<*const u8>)>,
+    pub cwd: String,
 }
 
 unsafe impl Send for Process {}
