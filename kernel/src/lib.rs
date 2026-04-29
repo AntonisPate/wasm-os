@@ -130,10 +130,20 @@ pub extern "C" fn kernel_loop() {
         
         let pid = table[i].id;
 
-        // Unblock processes waiting for TTY
-        if table[i].state == ProcessState::Blocked {
-            if line_ready || tty::TTY.lock().is_line_ready() {
-                table[i].state = ProcessState::Ready;
+        // Handle blocked processes
+        if let ProcessState::Blocked(ref reason) = table[i].state {
+            match reason {
+                process::BlockedReason::Tty => {
+                    if line_ready || tty::TTY.lock().is_line_ready() {
+                        table[i].state = ProcessState::Ready;
+                    }
+                }
+                process::BlockedReason::Wait(target_pid) => {
+                    let target_terminated = table.iter().any(|p| p.id == *target_pid && p.state == ProcessState::Terminated);
+                    if target_terminated {
+                        table[i].state = ProcessState::Ready;
+                    }
+                }
             }
         }
 

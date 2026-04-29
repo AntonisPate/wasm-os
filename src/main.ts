@@ -11,6 +11,15 @@ const terminalEl = document.getElementById("terminal") as HTMLElement;
 let terminalBuffer = "";
 
 function printTerminal(text: string) {
+  // Handle ANSI Clear Screen: \x1b[2J
+  if (text.includes("\x1b[2J")) {
+    terminalBuffer = "";
+    outputEl.textContent = "";
+    // If it also includes \x1b[H (Home), we just clear and continue
+    text = text.replace(/\x1b\[2J/g, "").replace(/\x1b\[H/g, "");
+    if (text.length === 0) return;
+  }
+
   for (let i = 0; i < text.length; i++) {
     const char = text[i];
     if (char === "\x08") {
@@ -25,7 +34,8 @@ function printTerminal(text: string) {
 
 // System logs (not from kernel stdout)
 function sysLog(msg: string) {
-  printTerminal(`[SYS] ${msg}\n`);
+  const logMsg = `\r\n[SYS] ${msg}\r\n`;
+  printTerminal(logMsg);
 }
 
 async function init() {

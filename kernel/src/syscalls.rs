@@ -1,6 +1,6 @@
 use crate::fs::{RAM_FS, traverse_path, FsNode};
 use crate::vfs;
-use crate::process::{CURRENT_PROCESS, PROCESS_TABLE, ProcessState, FileType};
+use crate::process::{CURRENT_PROCESS, PROCESS_TABLE, ProcessState, FileType, BlockedReason};
 use core::slice;
 use alloc::vec::Vec;
 use alloc::vec;
@@ -18,6 +18,8 @@ pub enum Syscall {
     Unlink(*const u8, usize, bool),
     Chdir(*const u8, usize),
     ReadDir(*const u8, usize, *mut u8, usize),
+    GetCwd(*mut u8, usize),
+    Wait(u32),
 }
 
 pub fn dispatch_syscall(call: Syscall) -> i32 {
@@ -228,6 +230,34 @@ pub fn dispatch_syscall(call: Syscall) -> i32 {
                 }
                 copy_len as i32
             } else { -1 }
+        }
+        Syscall::GetCwd(out_ptr, max_len) => {
+            if !validate_memory(pid, out_ptr as usize, max_len) { return -2; }
+            let mut table = PROCESS_TABLE.lock();
+            if let Some(p) = table.iter().find(|p| p.id == pid) {
+                let cwd_bytes = p.cwd.as_bytes();
+                let copy_len = cwd_bytes.len().min(max_len);
+                unsafe {
+                    core::ptr::copy_nonoverlapping(cwd_bytes.as_ptr(), out_ptr, copy_len);
+                }
+                copy_len as i32
+            } else { -1 }
+        }
+        Syscall::Wait(target_pid) => {
+            let mut table = PROCESS_TABLE.lock();
+            if let Some(target) = table.iter().find(|p| p.id == target_pid) {
+                if target.state == ProcessState::Terminated {
+                    0
+                } else {
+                    // Block the current process until target finishes
+                    if let Some(caller) = table.iter_mut().find(|p| p.id == pid) {
+                        caller.state = ProcessState::Blocked(BlockedReason::Wait(target_pid));
+                    }
+                    -3 // Blocked
+                }
+            } else {
+                -1 // Target not found
+            }
         }
     }
 }

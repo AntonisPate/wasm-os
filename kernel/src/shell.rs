@@ -1,14 +1,44 @@
 use crate::syscalls::{dispatch_syscall, Syscall};
 use crate::vfs;
 
+static mut PROMPT_PRINTED: bool = false;
+static mut WAITING_FOR_PID: u32 = 0;
+
 pub fn shell_main(_argc: usize, _argv: *const *const u8) {
+    unsafe {
+        // If we were waiting for a process, check if it's done
+        if WAITING_FOR_PID > 0 {
+            let res = dispatch_syscall(Syscall::Wait(WAITING_FOR_PID));
+            if res == -3 {
+                return; // Still waiting
+            }
+            WAITING_FOR_PID = 0;
+            PROMPT_PRINTED = false;
+            // When a command finishes, we want a fresh prompt on the next call
+            return;
+        }
+
+        if !PROMPT_PRINTED {
+            let mut cwd_buf = [0u8; 128];
+            let cwd_len = dispatch_syscall(Syscall::GetCwd(cwd_buf.as_mut_ptr(), cwd_buf.len()));
+            let cwd = if cwd_len > 0 {
+                core::str::from_utf8(&cwd_buf[..cwd_len as usize]).unwrap_or("/")
+            } else {
+                "/"
+            };
+            
+            let prompt = alloc::format!("[ {} ] > ", cwd);
+            dispatch_syscall(Syscall::Write(vfs::STDOUT, prompt.as_ptr(), prompt.len()));
+            PROMPT_PRINTED = true;
+        }
+    }
+
     let mut buffer = [0u8; 128];
-    
-    // Attempt to read from TTY
     let bytes_read = dispatch_syscall(Syscall::Read(vfs::STDIN, buffer.as_mut_ptr(), buffer.len()));
     
     if bytes_read > 0 {
         let input = &mut buffer[..bytes_read as usize];
+        // ... parse command ...
         
         // Find the end of the command name
         let mut cmd_end = input.len();
@@ -105,12 +135,24 @@ pub fn shell_main(_argc: usize, _argv: *const *const u8) {
                     dispatch_syscall(Syscall::Close(stdout_fd));
                 }
 
+                if res > 0 {
+                    unsafe { WAITING_FOR_PID = res as u32; }
+                    let wait_res = dispatch_syscall(Syscall::Wait(res as u32));
+                    if wait_res == -3 {
+                        return;
+                    }
+                    unsafe { WAITING_FOR_PID = 0; }
+                }
+
                 if res == -1 {
                     let msg = "Unknown command\r\n";
                     dispatch_syscall(Syscall::Write(vfs::STDOUT, msg.as_ptr(), msg.len()));
                 }
             }
         }
+        // Add a newline before the next prompt for better readability
+        dispatch_syscall(Syscall::Write(vfs::STDOUT, b"\r\n".as_ptr(), 2));
+        unsafe { PROMPT_PRINTED = false; }
     } else if bytes_read == -3 {
         // Blocked, just return to scheduler
         return;

@@ -61,17 +61,27 @@ self.addEventListener("message", async (e: MessageEvent) => {
 
 function runKernelLoop() {
   const inputPtr = kernel.get_input_buffer_ptr();
-  const STATUS_INDEX = inputPtr / 4; // Πρέπει να είναι Int32 aligned (διαιρετό δια 4)
+  const STATUS_INDEX = inputPtr / 4; 
   const memoryBuffer = sharedMem.memoryBuffer;
   const int32View = new Int32Array(memoryBuffer);
+
+  // Initial run to start the Shell and print the first prompt
+  if (kernel) {
+    kernel.kernel_loop();
+    if (sharedMem) {
+      const output = sharedMem.readFromKernel();
+      if (output && output.length > 0) {
+        postMessage({ type: "SYSCALL_LOG", payload: output });
+      }
+    }
+  }
+
   while (true) {
-    // console.log("Worker: Waiting for hardware interrupt...");
-    Atomics.wait(int32View, STATUS_INDEX, 0);
+    // Wait up to 100ms for input, or wake up to process background tasks/output
+    Atomics.wait(int32View, STATUS_INDEX, 0, 100);
 
     if (kernel) {
-      // console.log("Worker: Interrupt received, entering kernel_loop");
       kernel.kernel_loop();
-      // console.log("Worker: kernel_loop finished");
 
       if (sharedMem) {
         const output = sharedMem.readFromKernel();

@@ -4,6 +4,7 @@ pub mod mkdir;
 pub mod rm;
 pub mod ls;
 pub mod help;
+pub mod clear;
 
 pub fn get_command(name: &str) -> Option<fn(usize, *const *const u8)> {
     match name {
@@ -13,6 +14,7 @@ pub fn get_command(name: &str) -> Option<fn(usize, *const *const u8)> {
         "rm" => Some(rm::rm_main),
         "ls" => Some(ls::ls_main),
         "help" => Some(help::help_main),
+        "clear" => Some(clear::clear_main),
         _ => None,
     }
 }

@@ -2,11 +2,17 @@ use alloc::vec::Vec;
 use alloc::string::String;
 use spin::Mutex;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Debug)]
+pub enum BlockedReason {
+    Tty,
+    Wait(u32),
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum ProcessState {
     Ready,
     Running,
-    Blocked,
+    Blocked(BlockedReason),
     Terminated,
 }
 

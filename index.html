@@ -1,53 +1,214 @@
 <!doctype html>
-<html lang="el">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <title>Wasm OS Terminal</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>WasmOS Pro - Modern Web Kernel</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <style>
       :root {
-        --bg: #000000;
-        --text: #00ff00;
+        --bg-main: #0a0a0c;
+        --accent: #3b82f6;
+        --terminal-bg: rgba(13, 17, 23, 0.8);
+        --text: #e6edf3;
+        --text-dim: #8b949e;
+        --border: rgba(255, 255, 255, 0.1);
+        --glass-shine: rgba(255, 255, 255, 0.05);
       }
-      body {
-        background: var(--bg);
-        color: var(--text);
-        font-family: "Consolas", "Courier New", monospace;
-        margin: 0;
-        padding: 10px;
-        height: 100vh;
+
+      * {
         box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      body {
+        background-color: var(--bg-main);
+        background-image: 
+          radial-gradient(circle at 50% 0%, rgba(59, 130, 246, 0.15) 0%, transparent 50%),
+          radial-gradient(circle at 100% 100%, rgba(139, 92, 246, 0.1) 0%, transparent 40%);
+        color: var(--text);
+        font-family: 'Inter', sans-serif;
+        height: 100vh;
         overflow: hidden;
+        display: flex;
+        flex-direction: column;
       }
-      #terminal {
+
+      /* OS Header Bar */
+      .top-bar {
+        height: 32px;
+        background: rgba(0, 0, 0, 0.4);
+        backdrop-filter: blur(12px);
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        align-items: center;
+        padding: 0 16px;
+        justify-content: space-between;
+        font-size: 13px;
+        font-weight: 600;
+        z-index: 100;
+      }
+
+      .top-bar .left {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+      }
+
+      .top-bar .logo {
+        color: var(--accent);
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+
+      .top-bar .status {
+        color: var(--text-dim);
+        font-weight: 400;
+      }
+
+      /* Desktop Area */
+      .desktop {
+        flex: 1;
+        position: relative;
+        padding: 40px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      /* Glass Terminal Window */
+      .window {
         width: 100%;
-        height: 100%;
-        white-space: pre-wrap;
-        overflow-y: auto;
-        word-break: break-all;
-        font-size: 16px;
-        line-height: 1.2;
+        max-width: 900px;
+        height: 600px;
+        background: var(--terminal-bg);
+        backdrop-filter: blur(20px) saturate(180%);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        box-shadow: 
+          0 20px 50px rgba(0, 0, 0, 0.5),
+          0 0 0 1px var(--border);
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        animation: window-appear 0.6s cubic-bezier(0.16, 1, 0.3, 1);
       }
+
+      @keyframes window-appear {
+        from { opacity: 0; transform: translateY(20px) scale(0.98); }
+        to { opacity: 1; transform: translateY(0) scale(1); }
+      }
+
+      .window-header {
+        height: 40px;
+        background: rgba(255, 255, 255, 0.03);
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        align-items: center;
+        padding: 0 16px;
+        gap: 8px;
+      }
+
+      .dot {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+      }
+      .dot.red { background: #ff5f56; }
+      .dot.yellow { background: #ffbd2e; }
+      .dot.green { background: #27c93f; }
+
+      .window-title {
+        flex: 1;
+        text-align: center;
+        font-size: 13px;
+        color: var(--text-dim);
+        margin-right: 48px; /* Offset for dots balance */
+      }
+
+      #terminal {
+        flex: 1;
+        padding: 20px;
+        overflow-y: auto;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 14px;
+        line-height: 1.6;
+        color: #d1d5db;
+        scrollbar-width: thin;
+        scrollbar-color: var(--border) transparent;
+      }
+
+      #terminal::-webkit-scrollbar {
+        width: 8px;
+      }
+      #terminal::-webkit-scrollbar-thumb {
+        background: var(--border);
+        border-radius: 4px;
+      }
+
+      #output {
+        white-space: pre-wrap;
+        word-break: break-all;
+      }
+
       .cursor {
         display: inline-block;
-        width: 10px;
-        height: 1em;
-        background-color: var(--text);
-        vertical-align: bottom;
+        width: 8px;
+        height: 1.4em;
+        background: var(--accent);
+        vertical-align: middle;
+        margin-left: 2px;
+        box-shadow: 0 0 8px var(--accent);
         animation: blink 1s step-end infinite;
       }
+
       @keyframes blink {
-        0%,
-        100% {
-          opacity: 1;
-        }
-        50% {
-          opacity: 0;
-        }
+        50% { opacity: 0; }
       }
+
+      /* Custom terminal colors */
+      .sys-log { color: var(--accent); opacity: 0.8; }
+      .prompt { color: #10b981; font-weight: 600; }
     </style>
   </head>
   <body>
-    <div id="terminal"><span id="output"></span><span class="cursor"></span></div>
+    <div class="top-bar">
+      <div class="left">
+        <div class="logo">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"></path></svg>
+          WasmOS Pro
+        </div>
+        <div class="status">v0.1.0-alpha</div>
+      </div>
+      <div class="right" id="clock">12:00 PM</div>
+    </div>
+
+    <div class="desktop">
+      <div class="window">
+        <div class="window-header">
+          <div class="dot red"></div>
+          <div class="dot yellow"></div>
+          <div class="dot green"></div>
+          <div class="window-title">Kernel Terminal — wasm32</div>
+        </div>
+        <div id="terminal">
+          <span id="output"></span><span class="cursor"></span>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      function updateClock() {
+        const now = new Date();
+        document.getElementById('clock').innerText = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      }
+      setInterval(updateClock, 1000);
+      updateClock();
+    </script>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

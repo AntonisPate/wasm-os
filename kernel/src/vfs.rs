@@ -1,4 +1,4 @@
-use crate::process::{PROCESS_TABLE, FileType, ProcessState};
+use crate::process::{PROCESS_TABLE, FileType, ProcessState, BlockedReason};
 use crate::tty::TTY;
 use crate::syscalls::validate_memory;
 use crate::shared_memory;
@@ -117,7 +117,7 @@ pub fn vfs_read(pid: u32, fd: u32, ptr: *mut u8, len: usize) -> i32 {
         
         let mut table = PROCESS_TABLE.lock();
         if let Some(p) = table.iter_mut().find(|p| p.id == pid) {
-            p.state = ProcessState::Blocked;
+            p.state = ProcessState::Blocked(BlockedReason::Tty);
         }
         -3 // EAGAIN / Blocked
     }
