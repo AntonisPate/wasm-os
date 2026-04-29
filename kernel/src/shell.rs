@@ -1,10 +1,11 @@
 use crate::syscalls::{dispatch_syscall, Syscall};
+use crate::vfs;
 
 pub fn shell_main() {
     let mut buffer = [0u8; 128];
     
     // Attempt to read from TTY
-    let bytes_read = dispatch_syscall(Syscall::Read(buffer.as_mut_ptr(), buffer.len()));
+    let bytes_read = dispatch_syscall(Syscall::Read(vfs::STDIN, buffer.as_mut_ptr(), buffer.len()));
     
     if bytes_read > 0 {
         if let Ok(cmd) = core::str::from_utf8(&buffer[..bytes_read as usize]) {
@@ -17,7 +18,7 @@ pub fn shell_main() {
             };
 
             if !msg.is_empty() {
-                dispatch_syscall(Syscall::Write(msg.as_ptr(), msg.len()));
+                dispatch_syscall(Syscall::Write(vfs::STDOUT, msg.as_ptr(), msg.len()));
             }
         }
     } else if bytes_read == -3 {

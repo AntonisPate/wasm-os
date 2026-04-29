@@ -7,6 +7,7 @@ mod shared_memory;
 mod shell;
 mod syscalls;
 mod tty;
+mod vfs;
 
 use core::fmt::{self, Write};
 use process::{CURRENT_PROCESS, NEXT_PID, PROCESS_TABLE, ProcessState};
@@ -68,6 +69,10 @@ pub extern "C" fn kernel_spawn(ptr: usize, size: usize, perms: u32) -> u32 {
         current
     };
 
+    let mut fds = [None; 8];
+    fds[vfs::STDIN as usize] = Some(process::FileType::Tty); // stdin
+    fds[vfs::STDOUT as usize] = Some(process::FileType::Tty); // stdout
+
     table.push(process::Process {
         id: pid,
         memory_start: ptr,
@@ -75,6 +80,7 @@ pub extern "C" fn kernel_spawn(ptr: usize, size: usize, perms: u32) -> u32 {
         permissions: perms,
         state: process::ProcessState::Running,
         entry_point: None,
+        file_descriptors: fds,
     });
 
     pid

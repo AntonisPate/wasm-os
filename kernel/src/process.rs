@@ -9,6 +9,11 @@ pub enum ProcessState {
     Terminated,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FileType {
+    Tty,
+}
+
 pub struct Process {
     pub id: u32,
     pub memory_start: usize,
@@ -16,6 +21,7 @@ pub struct Process {
     pub permissions: u32,
     pub state: ProcessState,
     pub entry_point: Option<fn()>,
+    pub file_descriptors: [Option<FileType>; 8],
 }
 
 pub static PROCESS_TABLE: Mutex<Vec<Process>> = Mutex::new(Vec::new());
