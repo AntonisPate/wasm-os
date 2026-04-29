@@ -1,0 +1,11 @@
+[package]
+name = "kernel"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+spin = "0.10.0"
+dlmalloc = { version = "0.2", features = ["global"] }
