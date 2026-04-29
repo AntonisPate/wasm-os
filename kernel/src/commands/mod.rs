@@ -5,6 +5,7 @@ pub mod rm;
 pub mod ls;
 pub mod help;
 pub mod clear;
+pub mod grep;
 
 pub fn get_command(name: &str) -> Option<fn(usize, *const *const u8)> {
     match name {
@@ -15,6 +16,7 @@ pub fn get_command(name: &str) -> Option<fn(usize, *const *const u8)> {
         "ls" => Some(ls::ls_main),
         "help" => Some(help::help_main),
         "clear" => Some(clear::clear_main),
+        "grep"  => Some(grep::grep_main),
         _ => None,
     }
 }

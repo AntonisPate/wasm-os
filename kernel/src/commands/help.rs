@@ -4,7 +4,8 @@ use crate::vfs;
 pub fn help_main(_argc: usize, _argv: *const *const u8) {
     let msg = "Available commands:\r\n\
                echo <text> [> file]  - Print text to stdout or file\r\n\
-               cat <file>            - Print file contents\r\n\
+               cat [file]            - Print file or stdin (pipe)\r\n\
+               grep <pat> [file]     - Search for pattern in file or stdin (pipe)\r\n\
                ls [-t | -ta] [path]  - List directory contents (-t: tree, -ta: tree from root)\r\n\
                cd <path>             - Change directory\r\n\
                mkdir <path>          - Create directory\r\n\
