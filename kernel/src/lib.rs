@@ -4,6 +4,7 @@ extern crate alloc;
 mod commands;
 mod dynamic_memory;
 mod fs;
+mod pipe;
 mod process;
 mod shared_memory;
 mod shell;
@@ -19,14 +20,20 @@ static mut INITIALIZED: bool = false;
 #[unsafe(no_mangle)]
 pub extern "C" fn kernel_init() {
     unsafe {
-        if INITIALIZED {
-            return;
-        }
+        if INITIALIZED { return; }
         INITIALIZED = true;
     }
 
+    // Initialize the root filesystem
+    {
+        let mut fs_root = fs::RAM_FS.lock();
+        if let fs::FsNode::Directory(entries) = &mut *fs_root {
+            entries.insert(alloc::string::String::from("dev"), fs::FsNode::Directory(alloc::collections::BTreeMap::new()));
+        }
+    }
+
     // Spawn the Shell as PID 1
-    kernel_spawn(0x100000, 0x10000, 3, None, alloc::string::String::from("/")); // Symbolic memory
+    kernel_spawn(0x100000, 0x10000, 3, None, None, alloc::string::String::from("/")); // Symbolic memory
     let mut table = PROCESS_TABLE.lock();
     if let Some(shell) = table.iter_mut().find(|p| p.id == 1) {
         shell.entry_point = Some(shell::shell_main);
@@ -34,36 +41,15 @@ pub extern "C" fn kernel_init() {
     }
 }
 
-#[link(wasm_import_module = "env")]
-unsafe extern "C" {
-    // Δηλώνουμε τη JS συνάρτηση
-    pub unsafe fn host_log(ptr: *const u8, len: usize);
-}
-
-struct HostLogger;
-
-impl Write for HostLogger {
-    fn write_str(&mut self, s: &str) -> fmt::Result {
-        unsafe {
-            host_log(s.as_ptr(), s.len());
-        }
-        Ok(())
-    }
-}
-
-#[cfg(not(test))]
-#[panic_handler]
-fn panic(info: &core::panic::PanicInfo) -> ! {
-    // Χρησιμοποιούμε το writeln! macro που γράφει κατευθείαν
-    // στο HostLogger ΧΩΡΙΣ να κάνει allocate String.
-    let mut logger = HostLogger;
-    let _ = writeln!(logger, "{}", info);
-
-    loop {} // Σταματάμε την εκτέλεση
-}
-
 #[unsafe(no_mangle)]
-pub extern "C" fn kernel_spawn(ptr: usize, size: usize, perms: u32, stdout_type: Option<process::FileType>, cwd: alloc::string::String) -> u32 {
+pub extern "C" fn kernel_spawn(
+    ptr: usize, 
+    size: usize, 
+    perms: u32, 
+    stdin_type: Option<process::FileType>,
+    stdout_type: Option<process::FileType>, 
+    cwd: alloc::string::String
+) -> u32 {
     let mut table = PROCESS_TABLE.lock();
     let pid = unsafe {
         let current = NEXT_PID;
@@ -72,8 +58,18 @@ pub extern "C" fn kernel_spawn(ptr: usize, size: usize, perms: u32, stdout_type:
     };
 
     let mut fds = [const { None }; 8];
-    fds[vfs::STDIN as usize] = Some(process::FileType::Tty); // stdin
-    fds[vfs::STDOUT as usize] = Some(stdout_type.unwrap_or(process::FileType::Tty)); // stdout (inherited or TTY)
+    fds[vfs::STDIN as usize] = stdin_type.or(Some(process::FileType::Tty));
+    fds[vfs::STDOUT as usize] = stdout_type.or(Some(process::FileType::Tty));
+
+    // When a child inherits a pipe end, increment the reference count so that
+    // the shell closing its own copy of the FD doesn't prematurely signal EOF/EPIPE.
+    for fd in &fds {
+        match fd {
+            Some(process::FileType::PipeWrite(buf)) => { buf.lock().writer_count += 1; }
+            Some(process::FileType::PipeRead(buf))  => { buf.lock().reader_count += 1; }
+            _ => {}
+        }
+    }
 
     table.push(process::Process {
         id: pid,
@@ -94,99 +90,97 @@ pub extern "C" fn kernel_spawn(ptr: usize, size: usize, perms: u32, stdout_type:
 
 #[unsafe(no_mangle)]
 pub extern "C" fn kernel_loop() {
-    // 0. Ensure init
     unsafe {
-        if !INITIALIZED {
-            kernel_init();
-        }
+        if !INITIALIZED { kernel_init(); }
     }
 
-    // 1. Hardware Interrupt Routine (ISR)
     if shared_memory::is_input_ready() {
         let mut my_local_buffer = [0u8; 128];
         shared_memory::read_from_shared_memory(&mut my_local_buffer);
-
         let actual_len = my_local_buffer.iter().position(|&b| b == 0).unwrap_or(128);
-
         if actual_len > 0 {
-            tty::TTY
-                .lock()
-                .enqueue_raw_input(&my_local_buffer[..actual_len]);
+            tty::TTY.lock().enqueue_raw_input(&my_local_buffer[..actual_len]);
         }
-
         shared_memory::set_input_empty();
     }
 
-    // 2. TTY Driver Processing
     let line_ready = tty::TTY.lock().process_input();
 
-    // 3. Scheduler (Minimal)
     let mut i = 0;
     loop {
         let mut table = PROCESS_TABLE.lock();
-        if i >= table.len() {
-            break;
-        }
-        
-        let pid = table[i].id;
+        if i >= table.len() { break; }
 
-        // Handle blocked processes
+        if table[i].state == ProcessState::Terminated {
+            i += 1;
+            continue;
+        }
+
+        let pid = table[i].id;
+        let mut should_ready = false;
+
         if let ProcessState::Blocked(ref reason) = table[i].state {
             match reason {
                 process::BlockedReason::Tty => {
-                    if line_ready || tty::TTY.lock().is_line_ready() {
-                        table[i].state = ProcessState::Ready;
-                    }
+                    if line_ready || tty::TTY.lock().is_line_ready() { should_ready = true; }
                 }
                 process::BlockedReason::Wait(target_pid) => {
-                    let target_terminated = table.iter().any(|p| p.id == *target_pid && p.state == ProcessState::Terminated);
-                    if target_terminated {
-                        table[i].state = ProcessState::Ready;
+                    let target_pid_val = *target_pid;
+                    if table.iter().any(|p| p.id == target_pid_val && p.state == ProcessState::Terminated) {
+                        should_ready = true;
                     }
                 }
+                process::BlockedReason::PipeRead(buf) => {
+                    let pipe = buf.lock();
+                    if !pipe.data.is_empty() || pipe.writer_count == 0 { should_ready = true; }
+                }
+                process::BlockedReason::PipeWrite(buf) => {
+                    let pipe = buf.lock();
+                    if pipe.data.len() < pipe.capacity { should_ready = true; }
+                }
             }
+        }
+
+        if should_ready {
+            table[i].state = ProcessState::Ready;
         }
 
         if table[i].state == ProcessState::Ready || table[i].state == ProcessState::Running {
-            if let Some(entry) = table[i].entry_point {
-                unsafe {
-                    CURRENT_PROCESS = Some(pid);
-                }
-                let argc = table[i].argc;
-                let argv = table[i].argv;
-
-                // Release the lock before calling the process to avoid deadlocks
-                // if the process makes a syscall that needs the table lock.
+            let argc = table[i].argc;
+            let argv = table[i].argv;
+            let entry_opt = table[i].entry_point;
+            
+            if let Some(entry) = entry_opt {
+                table[i].state = ProcessState::Running;
                 drop(table);
-
+                unsafe { CURRENT_PROCESS = Some(pid); }
                 entry(argc, argv);
+                unsafe { CURRENT_PROCESS = None; }
+            } else { drop(table); }
+        } else { drop(table); }
 
-                // Re-acquire lock and check if process exited or blocked itself
-                table = PROCESS_TABLE.lock();
-                if table[i].state == ProcessState::Running {
-                    table[i].state = ProcessState::Ready;
-                }
-                unsafe {
-                    CURRENT_PROCESS = None;
-                }
-            }
-        }
         i += 1;
     }
 }
 
-#[unsafe(no_mangle)]
-pub extern "C" fn kernel_alloc(size: usize) -> *mut u8 {
-    dynamic_memory::fast_alloc(size)
+#[link(wasm_import_module = "env")]
+unsafe extern "C" {
+    pub unsafe fn host_log(ptr: *const u8, len: usize);
 }
 
-#[unsafe(no_mangle)]
-pub extern "C" fn check_access(pid: u32, ptr: usize, len: usize, mode: u32) -> bool {
-    let table = PROCESS_TABLE.lock();
-    if let Some(proc) = table.iter().find(|p| p.id == pid) {
-        let in_bounds = ptr >= proc.memory_start && (ptr + len) <= (proc.memory_start + proc.size);
-        let has_perm = (proc.permissions & mode) == mode;
-        return in_bounds && has_perm;
+struct HostLogger;
+
+impl Write for HostLogger {
+    fn write_str(&mut self, s: &str) -> fmt::Result {
+        unsafe { host_log(s.as_ptr(), s.len()); }
+        Ok(())
     }
-    false
+}
+
+#[cfg(not(test))]
+#[panic_handler]
+fn panic(info: &core::panic::PanicInfo) -> ! {
+    let mut logger = HostLogger;
+    let _ = writeln!(logger, "{}", info);
+    loop {}
 }
